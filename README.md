@@ -131,3 +131,9 @@ redis-cli -p 26379
 ```
 
 After that you will be able to confirm that the master switched to a different server
+
+## Package
+
+The chef solo package is built by drone based on the `cookbooks` directory and downloading the depencencies in this case the only depenency is the `docker` cookbook.
+
+After the package is built by drone it is uploaded to an s3 bucket which is used in the cloud formation template in the bootstraping phase.
