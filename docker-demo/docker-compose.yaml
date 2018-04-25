@@ -1,0 +1,35 @@
+
+version: '3'
+services:
+  master:
+    image: "redis:alpine"
+    volumes:
+      - ./master.conf:/etc/redis/redis.conf 
+  
+  sentinel_1:
+    image: "redis:alpine"
+    command: ["redis-server", "/etc/redis/sentinel.conf", "--sentinel"]
+    volumes:
+      - ./sentinel_1.conf:/etc/redis/sentinel.conf
+
+  sentinel_2:
+    image: "redis:alpine"
+    command: ["redis-server", "/etc/redis/sentinel.conf", "--sentinel"]
+    volumes:
+      - ./sentinel_2.conf:/etc/redis/sentinel.conf
+  node_1:
+    image: "redis:alpine"
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ./slave.conf:/etc/redis/redis.conf
+
+  node_2:
+    image: "redis:alpine"
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ./slave.conf:/etc/redis/redis.conf
+  node_3:
+    image: "redis:alpine"
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ./slave.conf:/etc/redis/redis.conf
