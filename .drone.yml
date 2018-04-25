@@ -7,6 +7,7 @@ pipeline:
         - tar -xzf docker.tar.gz --directory ./site-cookbooks 
         - tar zcvf chef-solo.tar.gz ./cookbooks ./site-cookbooks
         - mv chef-solo.tar.gz redis-chef/
+        - cp template/redis-cluster.template redis-chef/
     s3:
       image: plugins/s3
       acl: public-read

@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  KeyName:
+    Description: Existing EC2 KeyPair for SSH access.
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  VPCID:
+    Description: Existing VPC to use for this cluster.
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Description: Existing subnet to use for this cluster. Must belong to the Availability Zone above.
+    Type: AWS::EC2::Subnet::Id
+  InstanceType:
+    Description: EC2 instance type for the cluster.
+    Type: String
+    Default: t2.medium
+  DiskSizeGb:
+    Description: 'Size of the root disk for the EC2 instances, in GiB.  Default: 10'
+    Default: 10
+    Type: Number
+  AvailabilityZone:
+    Description: 'AvailabilityZone'
+    Type: AWS::EC2::AvailabilityZone::Name
+  SlaveCapacity:
+    Default: '3'
+    Description: Initial number of redis slaves (3-5).
+    Type: Number
+    MinValue: '3'
+    MaxValue: '5'
+    ConstraintDescription: must be between 3 and 5 EC2 instances.
+Mappings:
+  RegionMap:
+    us-east-1: 
+      default: ami-43a15f3e
+    us-west-1: 
+      default: ami-925144f2
+Resources:
+  MasterInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone: !Ref AvailabilityZone
+      KeyName: !Ref KeyName
+      InstanceType: !Ref InstanceType
+      NetworkInterfaces:
+      - DeleteOnTermination: true
+        AssociatePublicIpAddress: true
+        DeviceIndex: 0
+        SubnetId: !Ref SubnetId
+        GroupSet:
+        - !Ref RedisSecGroup
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - !Ref AWS::Region
+        - default
+      Tags:
+      - Key: Name
+        Value: redis-master
+      - Key: Role
+        Value: Master
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -o xtrace
+            apt-get update && apt-get install --yes python-pip curl
+            easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+            CFN_INIT=$(which cfn-init)
+            CFN_SIGNAL=$(which cfn-signal)
+
+            ${!CFN_INIT} \
+              --verbose \
+              --stack '${AWS::StackName}' \
+              --region '${AWS::Region}' \
+              --resource MasterInstance \
+              --configsets master
+            
+            ${!CFN_SIGNAL} \
+              --exit-code $? \
+              --stack '${AWS::StackName}' \
+              --region '${AWS::Region}' \
+              --resource MasterInstance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets: 
+          master: master
+        master:
+            files:
+              "/tmp/install-chef.sh":
+                content : |
+                  #!/bin/bash
+                  curl --silent --show-error --retry 3 https://omnitruck.chef.io/install.sh | bash -s -- -P chefdk -c stable -v 2.5.3
+                mode: '000755'
+              "/etc/chef/solo.rb":
+                content : |
+                  cookbook_path ['/etc/chef/cookbooks', '/etc/chef/site-cookbooks']
+                  verbose_logging true
+                  solo true
+                  node_path '/etc/chef/node-data'
+                  chef_repo_path '/etc/chef'
+                  cookbooks_path '/etc/chef'
+            commands:
+              "install-chef": 
+                command : "/tmp/install-chef.sh"
+              "setup-master-redis":
+                command: "chef-solo -c /etc/chef/solo.rb -o recipe[redis::master] --log_level info --recipe-url https://s3.amazonaws.com/jhernandez.me/redis-chef/chef-solo.tar.gz"
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M 
+  RedisSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all machines in the cluster
+      VpcId: !Ref VPCID
+      Tags:
+      - Key: Name
+        Value: redis-sec-group
+  SSHSecGroup:
+    Metadata:
+      Comment: Open ssh port
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RedisSecGroup
+      IpProtocol: tcp
+      FromPort: '22'
+      ToPort: '22'
+      CidrIp: 0.0.0.0/0 # Allow ssh from any location
+  RedisIntercom:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RedisSecGroup
+      SourceSecurityGroupId: !Ref RedisSecGroup
+      IpProtocol: '-1'
+      FromPort: '0'
+      ToPort: '6379'
+  RedisSentinelIntercom:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RedisSecGroup
+      SourceSecurityGroupId: !Ref RedisSecGroup
+      IpProtocol: '-1'
+      FromPort: '0'
+      ToPort: '26379'
+  RedisSlavesGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: MasterInstance
+    Properties:
+      AvailabilityZones: 
+      - !Ref AvailabilityZone
+      DesiredCapacity: !Ref SlaveCapacity
+      LaunchConfigurationName: !Ref RedisLaunchConfig
+      MinSize: '3'
+      MaxSize: '5'
+      VPCZoneIdentifier:
+        - !Ref SubnetId
+      Tags:
+      - Key: Name
+        Value: redis-slave
+        PropagateAtLaunch: 'true'
+    # How many instances update at a time.
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '1'
+  # Configuration for how to launch new instances in the auto scaling group.        
+  RedisLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - !Ref AWS::Region
+        - default
+      KeyName: !Ref KeyName
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+      - !Ref RedisSecGroup
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -o xtrace
+            apt-get update && apt-get install --yes python-pip curl
+            easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+            CFN_INIT=$(which cfn-init)
+            CFN_SIGNAL=$(which cfn-signal)
+
+            ${!CFN_INIT} \
+              --verbose \
+              --stack '${AWS::StackName}' \
+              --region '${AWS::Region}' \
+              --resource RedisLaunchConfig \
+              --configsets redis-slave
+            
+            ${!CFN_SIGNAL} \
+              --exit-code $? \
+              --stack '${AWS::StackName}' \
+              --region '${AWS::Region}' \
+              --resource RedisSlavesGroup
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets: 
+          redis-slave: redis-slave
+        redis-slave:
+            files:
+              "/etc/redis/slave.conf": 
+                  content: 
+                    Fn::Sub: 
+                    - "slaveof ${MasterIP} 6379"
+                    - MasterIP : !GetAtt MasterInstance.PrivateIp
+                  mode: '000666'
+              "/etc/redis/sentinel.conf": 
+                  content:
+                    Fn::Sub: 
+                    - |
+                      sentinel monitor redis-master ${MasterIP} 6379 2
+                      sentinel down-after-milliseconds redis-master 60000
+                      sentinel failover-timeout redis-master 180000
+                      sentinel parallel-syncs redis-master 1
+                    - MasterIP : !GetAtt MasterInstance.PrivateIp
+                  mode: '000666'
+              "/tmp/install-chef.sh":
+                content : |
+                  #!/bin/bash
+                  curl --silent --show-error --retry 3 https://omnitruck.chef.io/install.sh | bash -s -- -P chefdk -c stable -v 2.5.3
+                mode: '000755'
+              "/etc/chef/solo.rb":
+                content : |
+                  cookbook_path ['/etc/chef/cookbooks', '/etc/chef/site-cookbooks']
+                  verbose_logging true
+                  solo true
+                  node_path '/etc/chef/node-data'
+                  chef_repo_path '/etc/chef'
+                  cookbooks_path '/etc/chef'
+            commands:
+              "install-chef": 
+                command : "/tmp/install-chef.sh"
+              "setup-redis-slave":
+                command: "chef-solo -c /etc/chef/solo.rb -o recipe[redis::slave],recipe[redis::sentinel] --log_level info --recipe-url https://s3.amazonaws.com/jhernandez.me/redis-chef/chef-solo.tar.gz"
+Outputs:
+  MasterInstanceId:
+    Description: InstanceId of the master EC2 instance.
+    Value: !Ref MasterInstance
+  MasterInstancePublicIP:
+    Description: Public IP address of the master.
+    Value: !GetAtt MasterInstance.PublicIp
