@@ -3,4 +3,5 @@ pipeline:
       image: jhernandez/chefdk 
       commands:
         - knife cookbook site download  docker -f ./docker.tar.gz
+        - mkdir site-books
         - tar -xzf docker.tar.gz --directory ./site-books
