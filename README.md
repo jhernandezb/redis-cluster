@@ -30,11 +30,11 @@ aws cloudformation create-stack \
 
 ## Architecture
 
-For simplicity we use the `chef-solo` feature for this deployment so we don't need a chef server and instead all recipes are deliveried as a `chef-solo.tar.gz` package as part of the bootstraping fase.
+For simplicity we use the `chef-solo` feature for this deployment so we don't need a chef server and instead all recipes are deliveried as a `chef-solo.tar.gz` package as part of the bootstraping phase.
 
 This stack creates a master redis instance which is provisioned by a chef recipe that runs redis in a docker container.
 
-Slave instances are part of an auntoscaling group and each instance run both the redis slave and the redis sentinel in the same instance.
+Slave instances are part of an autoscaling group and each instance run both the redis slave and the redis sentinel in the same instance.
 
 Sentinel needs a quorum of 2 instances to work.
 
