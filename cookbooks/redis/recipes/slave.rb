@@ -8,5 +8,6 @@ docker_container 'redis-slave' do
   repo 'redis'
   port ['6379:6379', '26379:26379']
   restart_policy 'always'
-  command "redis-server"
+  volumes '/etc/redis/slave.conf:/etc/redis/slave.conf'
+  command "redis-server /etc/redis/slave.conf"
 end
