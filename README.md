@@ -41,7 +41,7 @@ Sentinel needs a quorum of 2 instances to work.
 ### Recipes
 
 * **redis::master** which runs a redis server
-* **redis::save** which runs a redis slave mounting configs from /etc/redis/slave.conf
+* **redis::slave** which runs a redis slave mounting configs from /etc/redis/slave.conf
 * **redis::sentinel** which runs a redis sentinel mounting configs from /etc/redis/sentinel.conf
 
 ## Verify the cluster
@@ -137,3 +137,9 @@ After that you will be able to confirm that the master switched to a different s
 The chef solo package is built by drone based on the `cookbooks` directory and downloading the depencencies in this case the only depenency is the `docker` cookbook.
 
 After the package is built by drone it is uploaded to an s3 bucket which is used in the cloud formation template in the bootstraping phase.
+
+## Teardown
+
+```
+aws cloudformation delete-stack --stack-name $STACK_NAME --region $REGION
+```
