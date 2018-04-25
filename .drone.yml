@@ -6,7 +6,7 @@ pipeline:
         - mkdir site-books
         - tar -xzf docker.tar.gz --directory ./site-books
         - tar zcvf chef-solo.tar.gz ./cookbooks ./site-cookbooks 
-    s3
+    s3:
       image: plugins/s3
       acl: public-read
       source: chef-solo.tar.gz
