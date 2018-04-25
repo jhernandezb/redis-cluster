@@ -9,5 +9,5 @@ docker_container 'redis-sentinel' do
   port ['26379:26379']
   restart_policy 'always'
   volumes '/etc/redis/sentinel.conf:/etc/redis/sentinel.conf'
-  command: "redis-server /etc/redis/sentinel.conf --sentinel"
+  command "redis-server /etc/redis/sentinel.conf --sentinel"
 end
