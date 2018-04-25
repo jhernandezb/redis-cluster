@@ -1,5 +1,7 @@
 # redis-cluster
 
+[![Build Status](https://drone.jhernandez.me/api/badges/jhernandezb/redis-cluster/status.svg)](https://drone.jhernandez.me/jhernandezb/redis-cluster)
+
 Deploy a redis cluster in an existing VPC
 
 ## Deploying
